@@ -1,31 +1,35 @@
 const fs = require("fs");
 const admin = require("firebase-admin");
 
-// 🔥 Importa a chave privada do Firebase
 const serviceAccount = require("./ativos-trans-firebase-adminsdk-fbsvc-d66831dc39.json");
 
-// 🔥 Inicializa o Firebase Admin
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
 });
 
 const db = admin.firestore();
 
-// 🔔 Escuta mudanças na coleção "solicitacoes"
-db.collection("solicitacoes").onSnapshot(snapshot => {
-  console.log("⏳ Mudança detectada → Criando backup Firestore → JSON...");
+let ultimaBackup = null;
 
-  const dados = snapshot.docs.map(doc => ({
-    id: doc.id,
-    ...doc.data(),
-  }));
+async function criarBackupSeMudou() {
+  const snapshot = await db.collection("solicitacoes").get();
+  const dados = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-  if (!fs.existsSync("./backup")) fs.mkdirSync("./backup");
+  const novoJSON = JSON.stringify(dados, null, 2);
 
-  const nomeArquivo = `./backup/solicitacoes_${Date.now()}.json`;
-  fs.writeFileSync(nomeArquivo, JSON.stringify(dados, null, 2));
+  // Só salva se o JSON mudou
+  if (novoJSON !== ultimaBackup) {
+    if (!fs.existsSync("./backup")) fs.mkdirSync("./backup");
 
-  console.log(`📁 Backup criado: ${nomeArquivo}`);
-}, err => {
-  console.error("❌ Erro no backup:", err.message);
-});
+    const nomeArquivo = `./backup/solicitacoes_${Date.now()}.json`;
+    fs.writeFileSync(nomeArquivo, novoJSON);
+    ultimaBackup = novoJSON;
+
+    console.log(`📁 Backup criado: ${nomeArquivo}`);
+  } else {
+    console.log("⚡ Sem alterações. Backup não criado.");
+  }
+}
+
+// Checa a cada 1 minuto (você pode ajustar)
+setInterval(criarBackupSeMudou, 60 * 1000);
